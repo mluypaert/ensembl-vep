@@ -134,16 +134,20 @@ workflow NF_VEP {
   def input = createInputChannels(params.input, "*")
   def vep_config = createInputChannels(params.vep_config, "*.ini")
 
-  def input_count = input.count()
-  def config_count = vep_config.count()
-
-  if (input_count != 1 && config_count != 1) {
-    exit 1, "Detected many-to-many scenario between VCF and VEP config files - currently not supported"
-  }
+  input.count()
+    .combine( vep_config.count() )
+    .subscribe{ input_count, config_count ->
+      if ( input_count != 1 && config_count != 1 )
+        exit 1, "Detected many-to-many scenario between VCF and VEP config files - currently not supported"
+    }
 
   // set if it is a one-to-many situation (single VCF and multiple ini file)
   // in this situation we produce output files with different names
-  one_to_many = input_count == 1 && config_count != 1
+  one_to_many = input.count()
+    .combine( vep_config.count() )
+    .map{ input_count, config_count ->
+      input_count == 1 && config_count != 1
+    }
 
   output_dir = createOutputChannel(params.outdir)
 
@@ -151,12 +155,13 @@ workflow NF_VEP {
 
   input
     .combine( vep_config )
+    .combine( one_to_many )
     .combine( output_dir )
     .combine( filters )
     .map {
-      data, config, out_dir, filter ->
+      data, config, one2many, out_dir, filter ->
         def vep_meta = [:]
-        vep_meta.one_to_many = one_to_many
+        vep_meta.one_to_many = one2many
         vep_meta.output_dir = out_dir
         vep_meta.filters = filter
 
